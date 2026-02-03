@@ -23,6 +23,8 @@ export interface OrderDocument extends FirestoreDocument {
   orders: OrderItem[];
   status: 'pending' | 'packing' | 'sent' | 'hnr';
   payment_status: 'full' | 'half' | 'none';
+  is_book_paid?: boolean;
+  is_shipping_paid?: boolean;
   updated_at: string;
   created_at: string;
   delivery_address?: string;
@@ -35,6 +37,14 @@ export interface StockOpnameDocument extends FirestoreDocument {
   book_name: string;
   price: number;
   stock: number;
+  created_at?: string;
+}
+
+export interface ExpenseDocument extends FirestoreDocument {
+  name: string;
+  price: number;
+  qty: number;
+  total: number;
   created_at?: string;
 }
 
@@ -128,25 +138,60 @@ class FirestoreService {
   async deductStock(items: OrderItem[]): Promise<void> {
     try {
       const batch = firestore().batch();
-      let hasUpdates = false;
+      const stockUpdates = new Map<string, number>();
 
       items.forEach(item => {
         if (item.stockId) {
-          const ref = firestore().collection('stock_opname').doc(item.stockId);
-          batch.update(ref, {
-            stock: firestore.FieldValue.increment(-1),
-          });
-          hasUpdates = true;
+          const currentCount = stockUpdates.get(item.stockId) || 0;
+          stockUpdates.set(item.stockId, currentCount + 1);
         }
       });
 
-      if (hasUpdates) {
-        await batch.commit();
-      }
+      if (stockUpdates.size === 0) return;
+
+      stockUpdates.forEach((count, stockId) => {
+        const ref = firestore().collection('stock_opname').doc(stockId);
+        batch.update(ref, {
+          stock: firestore.FieldValue.increment(-count),
+        });
+      });
+
+      await batch.commit();
     } catch (error) {
       console.error('Error deducting stock:', error);
       // We don't throw here to avoid blocking the order creation if stock update fails,
       // but in a real app we might want to handle this better.
+    }
+  }
+
+  /**
+   * Mengembalikan stok barang (increment)
+   * @param items Daftar item order
+   */
+  async restoreStock(items: OrderItem[]): Promise<void> {
+    try {
+      const batch = firestore().batch();
+      const stockUpdates = new Map<string, number>();
+
+      items.forEach(item => {
+        if (item.stockId) {
+          const currentCount = stockUpdates.get(item.stockId) || 0;
+          stockUpdates.set(item.stockId, currentCount + 1);
+        }
+      });
+
+      if (stockUpdates.size === 0) return;
+
+      stockUpdates.forEach((count, stockId) => {
+        const ref = firestore().collection('stock_opname').doc(stockId);
+        batch.update(ref, {
+          stock: firestore.FieldValue.increment(count),
+        });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      console.error('Error restoring stock:', error);
     }
   }
 

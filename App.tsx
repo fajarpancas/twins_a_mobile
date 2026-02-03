@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ItemListScreen from './src/screens/ItemListScreen';
 import StockOpnameScreen from './src/screens/StockOpnameScreen';
 import ProfitReportScreen from './src/screens/ProfitReportScreen';
+import ExpensesScreen from './src/screens/ExpensesScreen';
 import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 
 class ErrorBoundary extends React.Component<
@@ -58,6 +59,7 @@ function App(): React.JSX.Element {
               name="Laporan Keuntungan"
               component={ProfitReportScreen}
             />
+            <Drawer.Screen name="Pengeluaran" component={ExpensesScreen} />
           </Drawer.Navigator>
         </NavigationContainer>
       </ErrorBoundary>

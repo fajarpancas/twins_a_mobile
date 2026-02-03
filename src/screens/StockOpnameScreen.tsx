@@ -33,6 +33,8 @@ const StockOpnameScreen = () => {
   const [selectedItem, setSelectedItem] = useState<StockOpnameDocument | null>(
     null,
   );
+  const [newName, setNewName] = useState('');
+  const [newPrice, setNewPrice] = useState('');
   const [newStock, setNewStock] = useState('');
 
   const fetchItems = async () => {
@@ -96,24 +98,55 @@ const StockOpnameScreen = () => {
 
   const openEditModal = (item: StockOpnameDocument) => {
     setSelectedItem(item);
+    setNewName(item.book_name);
+    setNewPrice(item.price.toString());
     setNewStock(item.stock.toString());
     setEditModalVisible(true);
   };
 
-  const handleUpdateStock = async () => {
-    if (!selectedItem || !newStock) return;
+  const handleUpdateItem = async () => {
+    if (!selectedItem || !newName || !newPrice || !newStock) {
+      Alert.alert('Validasi', 'Mohon isi semua field');
+      return;
+    }
 
     try {
       await FirestoreService.updateDocument(COLLECTION_NAME, selectedItem.id, {
+        book_name: newName,
+        price: parseFloat(newPrice),
         stock: parseInt(newStock, 10),
       });
-      Alert.alert('Sukses', 'Stok berhasil diperbarui');
+      Alert.alert('Sukses', 'Data barang berhasil diperbarui');
       setEditModalVisible(false);
       fetchItems();
     } catch (error) {
-      console.error('Error updating stock:', error);
-      Alert.alert('Error', 'Gagal update stok');
+      console.error('Error updating item:', error);
+      Alert.alert('Error', 'Gagal update data barang');
     }
+  };
+
+  const handleDeleteItem = (item: StockOpnameDocument) => {
+    Alert.alert(
+      'Konfirmasi Hapus',
+      `Apakah Anda yakin ingin menghapus "${item.book_name}"?`,
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await FirestoreService.deleteDocument(COLLECTION_NAME, item.id);
+              Alert.alert('Sukses', 'Barang berhasil dihapus');
+              fetchItems();
+            } catch (error) {
+              console.error('Error deleting item:', error);
+              Alert.alert('Error', 'Gagal menghapus barang');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const filteredItems = items.filter(item =>
@@ -123,21 +156,29 @@ const StockOpnameScreen = () => {
   const totalStock = items.reduce((sum, item) => sum + item.stock, 0);
 
   const renderItem = ({ item }: { item: StockOpnameDocument }) => (
-    <TouchableOpacity
-      style={styles.itemContainer}
-      onPress={() => openEditModal(item)}
-    >
-      <View style={styles.itemHeader}>
-        <Text style={styles.itemTitle}>{item.book_name}</Text>
-        <View style={styles.stockBadge}>
-          <Text style={styles.stockBadgeText}>{item.stock}</Text>
-          <Text style={styles.editIcon}>✎</Text>
+    <View style={styles.itemContainer}>
+      <TouchableOpacity
+        style={styles.itemMainContent}
+        onPress={() => openEditModal(item)}
+      >
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemTitle}>{item.book_name}</Text>
+          <View style={styles.stockBadge}>
+            <Text style={styles.stockBadgeText}>{item.stock}</Text>
+            <Text style={styles.editIcon}>✎</Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.itemPrice}>
-        Rp {item.price.toLocaleString('id-ID')}
-      </Text>
-    </TouchableOpacity>
+        <Text style={styles.itemPrice}>
+          Rp {item.price.toLocaleString('id-ID')}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => handleDeleteItem(item)}
+      >
+        <Text style={styles.deleteButtonText}>🗑️</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -231,16 +272,29 @@ const StockOpnameScreen = () => {
       >
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Edit Stok</Text>
-            <Text style={styles.modalSubtitle}>{selectedItem?.book_name}</Text>
+            <Text style={styles.modalTitle}>Edit Barang</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Nama Barang"
+            />
+
+            <TextInput
+              style={styles.modalInput}
+              value={newPrice}
+              onChangeText={setNewPrice}
+              keyboardType="numeric"
+              placeholder="Harga"
+            />
 
             <TextInput
               style={styles.modalInput}
               value={newStock}
               onChangeText={setNewStock}
               keyboardType="numeric"
-              placeholder="Stok baru"
-              autoFocus
+              placeholder="Stok"
             />
 
             <View style={styles.modalButtons}>
@@ -252,7 +306,7 @@ const StockOpnameScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.buttonSave]}
-                onPress={handleUpdateStock}
+                onPress={handleUpdateItem}
               >
                 <Text style={styles.textStyle}>Update</Text>
               </TouchableOpacity>
@@ -374,6 +428,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderLeftWidth: 4,
     borderLeftColor: '#2196F3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  itemMainContent: {
+    flex: 1,
+  },
+  deleteButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  deleteButtonText: {
+    fontSize: 20,
   },
   itemHeader: {
     flexDirection: 'row',

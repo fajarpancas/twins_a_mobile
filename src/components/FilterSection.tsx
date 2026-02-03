@@ -5,7 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
+  TextInput,
 } from 'react-native';
 import DatePicker from 'react-native-date-picker';
 import { getStatusColor } from '../utils/statusHelper';
@@ -21,6 +21,8 @@ interface FilterSectionProps {
   setFromDate: (date: Date | null) => void;
   toDate: Date | null;
   setToDate: (date: Date | null) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
 }
 
 const FilterSection: React.FC<FilterSectionProps> = ({
@@ -32,6 +34,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   setFromDate,
   toDate,
   setToDate,
+  searchQuery,
+  setSearchQuery,
 }) => {
   const [openFrom, setOpenFrom] = useState(false);
   const [openTo, setOpenTo] = useState(false);
@@ -43,6 +47,15 @@ const FilterSection: React.FC<FilterSectionProps> = ({
 
   return (
     <View style={styles.filterContainer}>
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Cari Nama / No HP..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
       {/* Status Filter */}
       <ScrollView
         horizontal
@@ -190,9 +203,22 @@ const FilterSection: React.FC<FilterSectionProps> = ({
 const styles = StyleSheet.create({
   filterContainer: {
     backgroundColor: '#fff',
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  searchInput: {
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    fontSize: 14,
   },
   filterRow: {
     flexDirection: 'row',

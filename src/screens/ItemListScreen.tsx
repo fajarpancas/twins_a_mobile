@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import FirestoreService, { OrderDocument } from '../services/FirestoreService';
 import AddOrderModal from '../components/AddOrderModal';
+import OrderDetailModal from '../components/OrderDetailModal';
 import OrderItem from '../components/OrderItem';
 import FilterSection from '../components/FilterSection';
 
@@ -34,7 +35,14 @@ const ItemListScreen = ({ navigation }: any) => {
   const [selectedOrder, setSelectedOrder] = useState<OrderDocument | null>(
     null,
   );
+  const [editingOrderItems, setEditingOrderItems] =
+    useState<OrderDocument | null>(null);
   const [newAddress, setNewAddress] = useState('');
+
+  // State untuk modal detail
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedDetailOrder, setSelectedDetailOrder] =
+    useState<OrderDocument | null>(null);
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState<
@@ -43,6 +51,7 @@ const ItemListScreen = ({ navigation }: any) => {
   const [paymentFilter, setPaymentFilter] = useState<
     'all' | 'none' | 'half' | 'full'
   >('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [fromDate, setFromDate] = useState<Date | null>(null);
   const [toDate, setToDate] = useState<Date | null>(null);
@@ -85,6 +94,13 @@ const ItemListScreen = ({ navigation }: any) => {
       const matchPayment =
         paymentFilter === 'all' || item.payment_status === paymentFilter;
 
+      // Search Filter
+      const query = searchQuery.toLowerCase();
+      const matchSearch =
+        !searchQuery ||
+        (item.name && item.name.toLowerCase().includes(query)) ||
+        (item.last_4_digits_phone && item.last_4_digits_phone.includes(query));
+
       let matchDate = true;
       if (item.created_at) {
         // created_at could be a Firestore Timestamp or a string/number
@@ -115,28 +131,101 @@ const ItemListScreen = ({ navigation }: any) => {
         matchDate = false;
       }
 
-      return matchStatus && matchPayment && matchDate;
+      return matchStatus && matchPayment && matchDate && matchSearch;
     });
   };
 
   const filteredItems = getFilteredItems();
 
+  const handleEditItems = (item: OrderDocument) => {
+    setEditingOrderItems(item);
+    setModalVisible(true);
+  };
+
+  const handleShowDetail = (item: OrderDocument) => {
+    setSelectedDetailOrder(item);
+    setDetailModalVisible(true);
+  };
+
   const handleSaveOrder = async (orderData: Omit<OrderDocument, 'id'>) => {
     try {
-      await FirestoreService.addDocument(COLLECTION_NAME, orderData);
+      if (editingOrderItems) {
+        // Update existing order
 
-      // Kurangi stok barang yang dipesan
-      if (orderData.orders && orderData.orders.length > 0) {
-        await FirestoreService.deductStock(orderData.orders);
+        // 1. Restore stock from old items
+        if (editingOrderItems.orders && editingOrderItems.orders.length > 0) {
+          await FirestoreService.restoreStock(editingOrderItems.orders);
+        }
+
+        // 2. Update document
+        await FirestoreService.updateDocument(
+          COLLECTION_NAME,
+          editingOrderItems.id,
+          orderData,
+        );
+
+        // 3. Deduct stock for new items
+        if (orderData.orders && orderData.orders.length > 0) {
+          await FirestoreService.deductStock(orderData.orders);
+        }
+
+        Alert.alert('Sukses', 'Order berhasil diperbarui');
+        setEditingOrderItems(null);
+      } else {
+        await FirestoreService.addDocument(COLLECTION_NAME, orderData);
+
+        // Kurangi stok barang yang dipesan
+        if (orderData.orders && orderData.orders.length > 0) {
+          await FirestoreService.deductStock(orderData.orders);
+        }
+
+        Alert.alert('Sukses', 'Order baru berhasil ditambahkan');
       }
 
-      Alert.alert('Sukses', 'Order baru berhasil ditambahkan');
       fetchData(); // Refresh list
       setModalVisible(false);
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Gagal menambah order');
+      Alert.alert(
+        'Error',
+        editingOrderItems ? 'Gagal update order' : 'Gagal menambah order',
+      );
     }
+  };
+
+  const handleEditDeliveryType = (item: OrderDocument) => {
+    Alert.alert('Ubah Tipe Pengiriman', 'Pilih tipe pengiriman:', [
+      {
+        text: 'Manual',
+        onPress: async () => {
+          try {
+            await FirestoreService.updateDocument(COLLECTION_NAME, item.id, {
+              delivery_type: 'Manual',
+            });
+            fetchData();
+          } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'Gagal update tipe pengiriman');
+          }
+        },
+      },
+      {
+        text: 'Shopee',
+        onPress: async () => {
+          try {
+            await FirestoreService.updateDocument(COLLECTION_NAME, item.id, {
+              delivery_type: 'Shopee',
+              is_shipping_paid: true,
+            });
+            fetchData();
+          } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'Gagal update tipe pengiriman');
+          }
+        },
+      },
+      { text: 'Batal', style: 'cancel' },
+    ]);
   };
 
   const handleEditAddress = (item: OrderDocument) => {
@@ -190,28 +279,55 @@ const ItemListScreen = ({ navigation }: any) => {
     ]);
   };
 
-  const updatePayment = async (
-    id: string,
-    newPayment: OrderDocument['payment_status'],
-  ) => {
+  const handleToggleBookPaid = async (item: OrderDocument) => {
+    // Determine current state (defaulting to false or based on payment_status)
+    const currentBookPaid =
+      item.is_book_paid ??
+      (item.payment_status === 'full' || item.payment_status === 'half');
+    const newBookPaid = !currentBookPaid;
+    const currentShippingPaid =
+      item.is_shipping_paid ?? item.payment_status === 'full';
+
+    // Determine new payment_status
+    let newPaymentStatus: OrderDocument['payment_status'] = 'none';
+    if (newBookPaid && currentShippingPaid) newPaymentStatus = 'full';
+    else if (newBookPaid || currentShippingPaid) newPaymentStatus = 'half';
+
     try {
-      await FirestoreService.updateDocument(COLLECTION_NAME, id, {
-        payment_status: newPayment,
+      await FirestoreService.updateDocument(COLLECTION_NAME, item.id, {
+        is_book_paid: newBookPaid,
+        // Sync payment_status for compatibility
+        payment_status: newPaymentStatus,
       });
-      fetchData(); // Refresh data
+      fetchData();
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Gagal update pembayaran');
+      Alert.alert('Error', 'Gagal update status pembayaran buku');
     }
   };
 
-  const handleUpdatePayment = (item: OrderDocument) => {
-    Alert.alert('Update Pembayaran', 'Pilih status pembayaran:', [
-      { text: 'Belum Bayar', onPress: () => updatePayment(item.id, 'none') },
-      { text: 'DP (Half)', onPress: () => updatePayment(item.id, 'half') },
-      { text: 'Lunas (Full)', onPress: () => updatePayment(item.id, 'full') },
-      { text: 'Batal', style: 'cancel' },
-    ]);
+  const handleToggleShippingPaid = async (item: OrderDocument) => {
+    const currentBookPaid =
+      item.is_book_paid ??
+      (item.payment_status === 'full' || item.payment_status === 'half');
+    const currentShippingPaid =
+      item.is_shipping_paid ?? item.payment_status === 'full';
+    const newShippingPaid = !currentShippingPaid;
+
+    let newPaymentStatus: OrderDocument['payment_status'] = 'none';
+    if (currentBookPaid && newShippingPaid) newPaymentStatus = 'full';
+    else if (currentBookPaid || newShippingPaid) newPaymentStatus = 'half';
+
+    try {
+      await FirestoreService.updateDocument(COLLECTION_NAME, item.id, {
+        is_shipping_paid: newShippingPaid,
+        payment_status: newPaymentStatus,
+      });
+      fetchData();
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Gagal update status pembayaran ongkir');
+    }
   };
 
   const handleDeleteOrder = (item: OrderDocument) => {
@@ -266,6 +382,8 @@ const ItemListScreen = ({ navigation }: any) => {
         setFromDate={setFromDate}
         toDate={toDate}
         setToDate={setToDate}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
       />
 
       <FlatList
@@ -276,7 +394,10 @@ const ItemListScreen = ({ navigation }: any) => {
             onUpdateStatus={handleUpdateStatus}
             onDelete={handleDeleteOrder}
             onEditAddress={handleEditAddress}
-            onUpdatePayment={handleUpdatePayment}
+            onToggleBookPaid={handleToggleBookPaid}
+            onToggleShippingPaid={handleToggleShippingPaid}
+            onEditItems={handleEditItems}
+            onShowDetail={handleShowDetail}
           />
         )}
         keyExtractor={item => item.id}
@@ -293,8 +414,18 @@ const ItemListScreen = ({ navigation }: any) => {
 
       <AddOrderModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={() => {
+          setModalVisible(false);
+          setEditingOrderItems(null);
+        }}
         onSave={handleSaveOrder}
+        initialData={editingOrderItems}
+      />
+
+      <OrderDetailModal
+        visible={detailModalVisible}
+        onClose={() => setDetailModalVisible(false)}
+        order={selectedDetailOrder}
       />
 
       <Modal

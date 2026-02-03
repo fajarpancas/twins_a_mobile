@@ -8,7 +8,11 @@ interface OrderItemProps {
   onUpdateStatus: (item: OrderDocument) => void;
   onDelete: (item: OrderDocument) => void;
   onEditAddress: (item: OrderDocument) => void;
-  onUpdatePayment: (item: OrderDocument) => void;
+  onEditDeliveryType: (item: OrderDocument) => void;
+  onToggleBookPaid: (item: OrderDocument) => void;
+  onToggleShippingPaid: (item: OrderDocument) => void;
+  onEditItems: (item: OrderDocument) => void;
+  onShowDetail: (item: OrderDocument) => void;
 }
 
 const OrderItem: React.FC<OrderItemProps> = ({
@@ -16,11 +20,24 @@ const OrderItem: React.FC<OrderItemProps> = ({
   onUpdateStatus,
   onDelete,
   onEditAddress,
-  onUpdatePayment,
+  onEditDeliveryType,
+  onToggleBookPaid,
+  onToggleShippingPaid,
+  onEditItems,
+  onShowDetail,
 }) => {
   const totalPrice =
     item.orders?.reduce((sum, order) => sum + (order.price || 0), 0) || 0;
   const finalTotal = totalPrice + (item.unique_code || 0);
+
+  const isBookPaid =
+    item.is_book_paid ??
+    (item.payment_status === 'full' || item.payment_status === 'half');
+  const isShippingPaid =
+    item.is_shipping_paid ?? item.payment_status === 'full';
+
+  // Jika delivery_type Shopee, otomatis isShippingPaid dianggap true untuk UI
+  const isShopee = item.delivery_type === 'Shopee';
 
   return (
     <View style={styles.itemContainer}>
@@ -45,6 +62,12 @@ const OrderItem: React.FC<OrderItemProps> = ({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.detailButton}
+            onPress={() => onShowDetail(item)}
+          >
+            <Text style={styles.detailButtonText}>Detail</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.smallDeleteButton}
             onPress={() => onDelete(item)}
           >
@@ -56,15 +79,28 @@ const OrderItem: React.FC<OrderItemProps> = ({
       <Text style={styles.itemSubtitle}>
         Phone: ****{item.last_4_digits_phone}
       </Text>
-      <TouchableOpacity onPress={() => onEditAddress(item)}>
+      {!isShopee && (
+        <TouchableOpacity onPress={() => onEditAddress(item)}>
+          <Text style={styles.itemSubtitle}>
+            Alamat: {item.delivery_address || 'Belum diisi'} (Ubah)
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity onPress={() => onEditDeliveryType(item)}>
         <Text style={styles.itemSubtitle}>
-          Alamat: {item.delivery_address || 'Belum diisi'} (Ubah)
+          Pengiriman: {item.delivery_type} (Ubah)
         </Text>
       </TouchableOpacity>
 
       {item.orders && item.orders.length > 0 && (
         <View style={styles.orderItemsContainer}>
-          <Text style={styles.sectionHeader}>Items:</Text>
+          <View style={styles.rowBetween}>
+            <Text style={styles.sectionHeader}>Buku:</Text>
+            <TouchableOpacity onPress={() => onEditItems(item)}>
+              <Text style={styles.editLink}>(Edit Items)</Text>
+            </TouchableOpacity>
+          </View>
           {item.orders.map((order, index) => (
             <Text key={index} style={styles.orderItemText}>
               - {order.description} (Rp {order.price?.toLocaleString()})
@@ -87,17 +123,69 @@ const OrderItem: React.FC<OrderItemProps> = ({
         </Text>
       </View>
 
-      <TouchableOpacity onPress={() => onUpdatePayment(item)}>
-        <Text style={[styles.itemSubtitle, { color: 'blue', marginTop: 4 }]}>
-          Payment:{' '}
-          {item.payment_status === 'none'
-            ? 'Belum bayar'
-            : item.payment_status === 'half'
-            ? 'DP'
-            : 'Lunas'}{' '}
-          (Ubah)
-        </Text>
-      </TouchableOpacity>
+      <View style={{ marginTop: 8 }}>
+        <TouchableOpacity
+          onPress={() => onToggleBookPaid(item)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 8,
+          }}
+        >
+          <View
+            style={{
+              width: 24,
+              height: 24,
+              borderWidth: 2,
+              borderColor: isBookPaid ? '#4CAF50' : '#757575',
+              borderRadius: 4,
+              marginRight: 10,
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: isBookPaid ? '#4CAF50' : 'transparent',
+            }}
+          >
+            {isBookPaid && (
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>✓</Text>
+            )}
+          </View>
+          <Text style={[styles.itemSubtitle, { marginBottom: 0 }]}>
+            Bayar Buku
+          </Text>
+        </TouchableOpacity>
+
+        {!isShopee && (
+          <TouchableOpacity
+            onPress={() => onToggleShippingPaid(item)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 5,
+            }}
+          >
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderWidth: 2,
+                borderColor: isShippingPaid ? '#4CAF50' : '#757575',
+                borderRadius: 4,
+                marginRight: 10,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: isShippingPaid ? '#4CAF50' : 'transparent',
+              }}
+            >
+              {isShippingPaid && (
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>✓</Text>
+              )}
+            </View>
+            <Text style={[styles.itemSubtitle, { marginBottom: 0 }]}>
+              Bayar Ongkir
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       <Text style={styles.dateText}>
         Created: {new Date(item.created_at).toLocaleDateString()}
@@ -154,6 +242,20 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderColor: 'currentColor',
   },
+  detailButton: {
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#bbdefb',
+    marginRight: 8,
+  },
+  detailButtonText: {
+    color: '#1976D2',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
   smallDeleteButton: {
     backgroundColor: '#ffebee',
     paddingHorizontal: 8,
@@ -177,7 +279,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 4,
-    color: '#555',
+    color: '#333',
+  },
+  editLink: {
+    fontSize: 12,
+    color: '#2196F3',
+    fontWeight: '600',
   },
   orderItemText: {
     fontSize: 13,
