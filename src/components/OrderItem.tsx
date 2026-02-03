@@ -123,7 +123,7 @@ const OrderItem: React.FC<OrderItemProps> = ({
         </Text>
       </View>
 
-      <View style={{ marginTop: 8 }}>
+      <View style={{ marginTop: 8, flexDirection: 'row', gap: 16 }}>
         <TouchableOpacity
           onPress={() => onToggleBookPaid(item)}
           style={{
@@ -139,7 +139,7 @@ const OrderItem: React.FC<OrderItemProps> = ({
               borderWidth: 2,
               borderColor: isBookPaid ? '#4CAF50' : '#757575',
               borderRadius: 4,
-              marginRight: 10,
+              marginRight: 4,
               justifyContent: 'center',
               alignItems: 'center',
               backgroundColor: isBookPaid ? '#4CAF50' : 'transparent',
@@ -170,7 +170,7 @@ const OrderItem: React.FC<OrderItemProps> = ({
                 borderWidth: 2,
                 borderColor: isShippingPaid ? '#4CAF50' : '#757575',
                 borderRadius: 4,
-                marginRight: 10,
+                marginRight: 4,
                 justifyContent: 'center',
                 alignItems: 'center',
                 backgroundColor: isShippingPaid ? '#4CAF50' : 'transparent',

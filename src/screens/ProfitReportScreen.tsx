@@ -17,6 +17,7 @@ import FirestoreService, {
   OrderDocument,
   StockOpnameDocument,
   ExpenseDocument,
+  HistoricalDataDocument,
 } from '../services/FirestoreService';
 
 if (
@@ -54,16 +55,19 @@ const ProfitReportScreen = () => {
 
   const fetchData = async () => {
     try {
-      // 1. Fetch Orders, Stock, and Expenses Data
-      const [ordersData, stockData, expensesData] = await Promise.all([
-        FirestoreService.getCollection('orders'),
-        FirestoreService.getCollection('stock_opname'),
-        FirestoreService.getCollection('expenses'),
-      ]);
+      // 1. Fetch Orders, Stock, Expenses, and Historical Data
+      const [ordersData, stockData, expensesData, historicalData] =
+        await Promise.all([
+          FirestoreService.getCollection('orders'),
+          FirestoreService.getCollection('stock_opname'),
+          FirestoreService.getCollection('expenses'),
+          FirestoreService.getCollection('sales_history'),
+        ]);
 
       const orders = ordersData as OrderDocument[];
       const stocks = stockData as StockOpnameDocument[];
       const expenses = expensesData as ExpenseDocument[];
+      const history = historicalData as HistoricalDataDocument[];
 
       // 2. Create Stock Map for fast lookup (id -> price)
       const stockMap = new Map<string, number>();
@@ -120,6 +124,25 @@ const ProfitReportScreen = () => {
             });
           }
         });
+
+      // Process Historical Data
+      history.forEach(item => {
+        totalRev += item.revenue || 0;
+        totalCst += item.capital || 0;
+        totalPft += item.profit || 0;
+        totalBooks += item.total_books || 0;
+
+        calculatedItems.push({
+          id: `history-${item.id}`,
+          orderId: 'HISTORY',
+          orderName: 'History Lama',
+          itemName: item.description || 'Data History',
+          sellPrice: item.revenue || 0,
+          buyPrice: item.capital || 0,
+          profit: item.profit || 0,
+          date: item.created_at || new Date().toISOString(),
+        });
+      });
 
       // 4. Calculate Expenses and Zakat
       const totalExp = expenses.reduce(
