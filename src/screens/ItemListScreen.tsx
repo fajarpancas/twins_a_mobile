@@ -1,4 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useLayoutEffect,
+  useCallback,
+} from 'react';
 import {
   View,
   Text,
@@ -9,14 +14,16 @@ import {
   SafeAreaView,
   Button,
   Alert,
-  TouchableOpacity,
   Modal,
   TextInput,
+  TouchableOpacity,
 } from 'react-native';
 import FirestoreService, { OrderDocument } from '../services/FirestoreService';
 import AddOrderModal from '../components/AddOrderModal';
+import OrderItem from '../components/OrderItem';
+import FilterSection from '../components/FilterSection';
 
-const ItemListScreen = () => {
+const ItemListScreen = ({ navigation }: any) => {
   const [items, setItems] = useState<OrderDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -29,12 +36,26 @@ const ItemListScreen = () => {
   );
   const [newAddress, setNewAddress] = useState('');
 
-  // Ganti 'items' dengan nama koleksi Anda yang sebenarnya di Firestore
+  // Filter States
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'pending' | 'packing' | 'sent' | 'hnr'
+  >('all');
+  const [paymentFilter, setPaymentFilter] = useState<
+    'all' | 'none' | 'half' | 'full'
+  >('all');
+
+  const [fromDate, setFromDate] = useState<Date | null>(null);
+  const [toDate, setToDate] = useState<Date | null>(null);
+
   const COLLECTION_NAME = 'orders';
 
   const fetchData = async () => {
     try {
-      const data = await FirestoreService.getCollection(COLLECTION_NAME);
+      const data = await FirestoreService.getCollection(
+        COLLECTION_NAME,
+        'created_at',
+        'desc',
+      );
       setItems(data as OrderDocument[]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -44,13 +65,71 @@ const ItemListScreen = () => {
     }
   };
 
-  const handleAddOrder = () => {
+  const handleAddOrder = useCallback(() => {
     setModalVisible(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Button onPress={handleAddOrder} title="Tambah Order" />
+      ),
+      headerTitle: '', // Keep title empty as per previous request
+    });
+  }, [navigation, handleAddOrder]);
+
+  const getFilteredItems = () => {
+    return items.filter(item => {
+      const matchStatus =
+        statusFilter === 'all' || item.status === statusFilter;
+      const matchPayment =
+        paymentFilter === 'all' || item.payment_status === paymentFilter;
+
+      let matchDate = true;
+      if (item.created_at) {
+        // created_at could be a Firestore Timestamp or a string/number
+        // Adjust parsing logic as needed. Assuming it can be converted to Date.
+        // If it's a Firestore Timestamp, we might need item.created_at.toDate()
+        // But here we'll assume standard Date constructor works or it's a string
+        const itemDate = new Date(item.created_at);
+        if (fromDate) {
+          // Reset time to 00:00:00 for accurate date comparison
+          const from = new Date(fromDate);
+          from.setHours(0, 0, 0, 0);
+          const itemD = new Date(itemDate);
+          itemD.setHours(0, 0, 0, 0);
+          matchDate = matchDate && itemD >= from;
+        }
+        if (toDate) {
+          // Reset time to 23:59:59 for accurate date comparison
+          const to = new Date(toDate);
+          to.setHours(23, 59, 59, 999);
+          const itemD = new Date(itemDate);
+          itemD.setHours(0, 0, 0, 0);
+          // logic correction: item date (start of day) <= to date (end of day)
+          // or simply compare dates
+          matchDate = matchDate && itemD <= to;
+        }
+      } else if (fromDate || toDate) {
+        // If item has no date but filter is active, exclude it
+        matchDate = false;
+      }
+
+      return matchStatus && matchPayment && matchDate;
+    });
   };
+
+  const filteredItems = getFilteredItems();
 
   const handleSaveOrder = async (orderData: Omit<OrderDocument, 'id'>) => {
     try {
       await FirestoreService.addDocument(COLLECTION_NAME, orderData);
+
+      // Kurangi stok barang yang dipesan
+      if (orderData.orders && orderData.orders.length > 0) {
+        await FirestoreService.deductStock(orderData.orders);
+      }
+
       Alert.alert('Sukses', 'Order baru berhasil ditambahkan');
       fetchData(); // Refresh list
       setModalVisible(false);
@@ -82,29 +161,6 @@ const ItemListScreen = () => {
     }
   };
 
-  const handleUpdateStatus = (item: OrderDocument) => {
-    Alert.alert('Update Status', 'Pilih status baru:', [
-      { text: 'Pending', onPress: () => updateStatus(item.id, 'pending') },
-      { text: 'Packing', onPress: () => updateStatus(item.id, 'packing') },
-      { text: 'Sent', onPress: () => updateStatus(item.id, 'sent') },
-      {
-        text: 'HnR',
-        onPress: () => updateStatus(item.id, 'hnr'),
-        style: 'destructive',
-      },
-      { text: 'Batal', style: 'cancel' },
-    ]);
-  };
-
-  const handleUpdatePayment = (item: OrderDocument) => {
-    Alert.alert('Update Pembayaran', 'Pilih status pembayaran:', [
-      { text: 'Belum Bayar', onPress: () => updatePayment(item.id, 'none') },
-      { text: 'DP (Half)', onPress: () => updatePayment(item.id, 'half') },
-      { text: 'Lunas (Full)', onPress: () => updatePayment(item.id, 'full') },
-      { text: 'Batal', style: 'cancel' },
-    ]);
-  };
-
   const updateStatus = async (
     id: string,
     newStatus: OrderDocument['status'],
@@ -120,6 +176,20 @@ const ItemListScreen = () => {
     }
   };
 
+  const handleUpdateStatus = (item: OrderDocument) => {
+    Alert.alert('Update Status', 'Pilih status baru:', [
+      { text: 'Pending', onPress: () => updateStatus(item.id, 'pending') },
+      { text: 'Packing', onPress: () => updateStatus(item.id, 'packing') },
+      { text: 'Sent', onPress: () => updateStatus(item.id, 'sent') },
+      {
+        text: 'HnR',
+        onPress: () => updateStatus(item.id, 'hnr'),
+        style: 'destructive',
+      },
+      { text: 'Batal', style: 'cancel' },
+    ]);
+  };
+
   const updatePayment = async (
     id: string,
     newPayment: OrderDocument['payment_status'],
@@ -133,6 +203,15 @@ const ItemListScreen = () => {
       console.error(error);
       Alert.alert('Error', 'Gagal update pembayaran');
     }
+  };
+
+  const handleUpdatePayment = (item: OrderDocument) => {
+    Alert.alert('Update Pembayaran', 'Pilih status pembayaran:', [
+      { text: 'Belum Bayar', onPress: () => updatePayment(item.id, 'none') },
+      { text: 'DP (Half)', onPress: () => updatePayment(item.id, 'half') },
+      { text: 'Lunas (Full)', onPress: () => updatePayment(item.id, 'full') },
+      { text: 'Batal', style: 'cancel' },
+    ]);
   };
 
   const handleDeleteOrder = (item: OrderDocument) => {
@@ -168,106 +247,6 @@ const ItemListScreen = () => {
     fetchData();
   };
 
-  const renderItem = ({ item }: { item: OrderDocument }) => {
-    const totalPrice =
-      item.orders?.reduce((sum, order) => sum + (order.price || 0), 0) || 0;
-    const finalTotal = totalPrice + (item.unique_code || 0);
-
-    return (
-      <View style={styles.itemContainer}>
-        <View style={styles.rowBetween}>
-          <Text style={styles.itemTitle}>{item.name || 'Tanpa Nama'}</Text>
-          <View style={styles.rowRight}>
-            <TouchableOpacity
-              onPress={() => handleUpdateStatus(item)}
-              style={styles.statusButton}
-            >
-              <Text
-                style={[
-                  styles.statusBadge,
-                  { color: getStatusColor(item.status) },
-                ]}
-              >
-                {item.status?.toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.smallDeleteButton}
-              onPress={() => handleDeleteOrder(item)}
-            >
-              <Text style={styles.smallDeleteText}>X</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text style={styles.itemSubtitle}>
-          Phone: ****{item.last_4_digits_phone}
-        </Text>
-        <TouchableOpacity onPress={() => handleEditAddress(item)}>
-          <Text style={styles.itemSubtitle}>
-            Alamat: {item.delivery_address || 'Belum diisi'} (Ubah)
-          </Text>
-        </TouchableOpacity>
-
-        <View style={styles.paymentContainer}>
-          <Text style={styles.itemSubtitle}>
-            Total Belanja: Rp {totalPrice.toLocaleString()}
-          </Text>
-          {item.unique_code && (
-            <Text style={styles.uniqueCodeText}>
-              Kode Unik: +{item.unique_code}
-            </Text>
-          )}
-          <Text style={styles.totalPaymentText}>
-            Total Bayar: Rp {finalTotal.toLocaleString()}
-          </Text>
-        </View>
-
-        <TouchableOpacity onPress={() => handleUpdatePayment(item)}>
-          <Text style={[styles.itemSubtitle, { color: 'blue', marginTop: 4 }]}>
-            Payment:{' '}
-            {item.payment_status === 'none'
-              ? 'Belum bayar'
-              : item.payment_status === 'half'
-              ? 'DP'
-              : 'Lunas'}{' '}
-            (Ubah)
-          </Text>
-        </TouchableOpacity>
-
-        {item.orders && item.orders.length > 0 && (
-          <View style={styles.orderItemsContainer}>
-            <Text style={styles.sectionHeader}>Items:</Text>
-            {item.orders.map((order, index) => (
-              <Text key={index} style={styles.orderItemText}>
-                - {order.description} (Rp {order.price?.toLocaleString()})
-              </Text>
-            ))}
-          </View>
-        )}
-
-        <Text style={styles.dateText}>
-          Created: {new Date(item.created_at).toLocaleDateString()}
-        </Text>
-      </View>
-    );
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return '#f39c12';
-      case 'packing':
-        return '#3498db';
-      case 'sent':
-        return '#2ecc71';
-      case 'hnr':
-        return '#e74c3c';
-      default:
-        return '#95a5a6';
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -278,13 +257,28 @@ const ItemListScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Daftar Order</Text>
-        <Button title="Tambah Order" onPress={handleAddOrder} />
-      </View>
+      <FilterSection
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        paymentFilter={paymentFilter}
+        setPaymentFilter={setPaymentFilter}
+        fromDate={fromDate}
+        setFromDate={setFromDate}
+        toDate={toDate}
+        setToDate={setToDate}
+      />
+
       <FlatList
-        data={items}
-        renderItem={renderItem}
+        data={filteredItems}
+        renderItem={({ item }) => (
+          <OrderItem
+            item={item}
+            onUpdateStatus={handleUpdateStatus}
+            onDelete={handleDeleteOrder}
+            onEditAddress={handleEditAddress}
+            onUpdatePayment={handleUpdatePayment}
+          />
+        )}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -350,113 +344,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerContainer: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    flex: 1,
-  },
   listContent: {
     padding: 16,
-  },
-  itemContainer: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  itemTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-    color: '#333',
-  },
-  itemSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  itemDescription: {
-    fontSize: 14,
-    color: '#444',
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statusBadge: {
-    fontWeight: 'bold',
-    fontSize: 12,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderColor: 'currentColor',
-  },
-  orderItemsContainer: {
-    marginTop: 8,
     paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  sectionHeader: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    color: '#555',
-  },
-  orderItemText: {
-    fontSize: 13,
-    color: '#666',
-    marginLeft: 8,
-    marginBottom: 2,
-  },
-  paymentContainer: {
-    marginVertical: 8,
-    padding: 8,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  uniqueCodeText: {
-    fontSize: 12,
-    color: '#e67e22',
-    fontStyle: 'italic',
-    marginBottom: 4,
-  },
-  totalPaymentText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    paddingTop: 4,
-  },
-  dateText: {
-    fontSize: 10,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'right',
   },
   emptyContainer: {
     padding: 20,
@@ -529,26 +419,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusButton: {
-    marginRight: 8,
-  },
-  smallDeleteButton: {
-    backgroundColor: '#ffebee',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#ffcdd2',
-  },
-  smallDeleteText: {
-    color: '#c62828',
-    fontWeight: 'bold',
-    fontSize: 12,
   },
 });
 

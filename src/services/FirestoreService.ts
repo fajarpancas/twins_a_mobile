@@ -14,6 +14,7 @@ export interface OrderItem {
   id: string;
   description: string;
   price: number;
+  stockId?: string; // Reference to stock_opname document
 }
 
 export interface OrderDocument extends FirestoreDocument {
@@ -30,15 +31,35 @@ export interface OrderDocument extends FirestoreDocument {
   unique_code?: number;
 }
 
+export interface StockOpnameDocument extends FirestoreDocument {
+  book_name: string;
+  price: number;
+  stock: number;
+  created_at?: string;
+}
+
 class FirestoreService {
   /**
    * Mengambil semua dokumen dari sebuah koleksi
    * @param collectionName Nama koleksi
+   * @param orderByField Field untuk sorting (opsional)
+   * @param orderDirection Arah sorting ('asc' atau 'desc') (opsional)
    * @returns Promise berisi array dokumen
    */
-  async getCollection(collectionName: string): Promise<FirestoreDocument[]> {
+  async getCollection(
+    collectionName: string,
+    orderByField?: string,
+    orderDirection: 'asc' | 'desc' = 'asc',
+  ): Promise<FirestoreDocument[]> {
     try {
-      const snapshot = await firestore().collection(collectionName).get();
+      let query: FirebaseFirestoreTypes.Query =
+        firestore().collection(collectionName);
+
+      if (orderByField) {
+        query = query.orderBy(orderByField, orderDirection);
+      }
+
+      const snapshot = await query.get();
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -90,14 +111,42 @@ class FirestoreService {
   ): Promise<FirestoreDocument> {
     try {
       const docRef = await firestore().collection(collectionName).add(data);
-      const doc = await docRef.get();
       return {
-        id: doc.id,
-        ...doc.data(),
+        id: docRef.id,
+        ...data,
       };
     } catch (error) {
       console.error(`Error adding document to ${collectionName}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Mengurangi stok barang berdasarkan item order
+   * @param items Daftar item order
+   */
+  async deductStock(items: OrderItem[]): Promise<void> {
+    try {
+      const batch = firestore().batch();
+      let hasUpdates = false;
+
+      items.forEach(item => {
+        if (item.stockId) {
+          const ref = firestore().collection('stock_opname').doc(item.stockId);
+          batch.update(ref, {
+            stock: firestore.FieldValue.increment(-1),
+          });
+          hasUpdates = true;
+        }
+      });
+
+      if (hasUpdates) {
+        await batch.commit();
+      }
+    } catch (error) {
+      console.error('Error deducting stock:', error);
+      // We don't throw here to avoid blocking the order creation if stock update fails,
+      // but in a real app we might want to handle this better.
     }
   }
 

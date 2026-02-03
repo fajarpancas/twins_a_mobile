@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "122556729134",
+    "project_id": "twinsalib",
+    "storage_bucket": "twinsalib.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:122556729134:android:6480b345fb47f5cec2dcbf",
+        "android_client_info": {
+          "package_name": "com.twinsalib"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvlLYH_lLkLCM2FDKNymKtQpbP2VSIAJ4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

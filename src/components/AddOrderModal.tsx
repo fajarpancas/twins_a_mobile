@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -10,8 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  FlatList,
 } from 'react-native';
-import { OrderDocument, OrderItem } from '../services/FirestoreService';
+import FirestoreService, {
+  OrderDocument,
+  OrderItem,
+  StockOpnameDocument,
+} from '../services/FirestoreService';
 
 interface AddOrderModalProps {
   visible: boolean;
@@ -34,6 +39,51 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
     { id: Date.now().toString(), description: '', price: 0 },
   ]);
   const [loading, setLoading] = useState(false);
+
+  // State untuk data stock opname dan modal seleksi
+  const [stockItems, setStockItems] = useState<StockOpnameDocument[]>([]);
+  const [isSelectionModalVisible, setSelectionModalVisible] = useState(false);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      fetchStockItems();
+    }
+  }, [visible]);
+
+  const fetchStockItems = async () => {
+    try {
+      const data = await FirestoreService.getCollection('stock_opname');
+      setStockItems(data as StockOpnameDocument[]);
+    } catch (error) {
+      console.error('Error fetching stock items:', error);
+    }
+  };
+
+  const handleOpenSelection = (itemId: string) => {
+    setActiveItemId(itemId);
+    setSearchQuery(''); // Reset search query
+    setSelectionModalVisible(true);
+  };
+
+  const handleSelectStockItem = (stockItem: StockOpnameDocument) => {
+    if (activeItemId) {
+      setItems(currentItems =>
+        currentItems.map(item =>
+          item.id === activeItemId
+            ? {
+                ...item,
+                description: stockItem.book_name,
+                stockId: stockItem.id,
+              }
+            : item,
+        ),
+      );
+    }
+    setSelectionModalVisible(false);
+    setActiveItemId(null);
+  };
 
   const handleAddItem = () => {
     setItems([
@@ -182,37 +232,59 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
             </View>
 
             <Text style={styles.sectionHeader}>Item Belanjaan</Text>
-            {items.map(item => (
-              <View key={item.id} style={styles.itemRow}>
-                <View style={{ flex: 1 }}>
-                  <TextInput
-                    style={[styles.input, { marginBottom: 8 }]}
-                    value={item.description}
-                    onChangeText={text =>
-                      handleUpdateItem(item.id, 'description', text)
-                    }
-                    placeholder="Nama Barang"
-                  />
-                  <TextInput
-                    style={styles.input}
-                    value={item.price.toString()}
-                    onChangeText={text =>
-                      handleUpdateItem(item.id, 'price', parseInt(text) || 0)
-                    }
-                    keyboardType="numeric"
-                    placeholder="Harga"
-                  />
+            {items.map(item => {
+              const stockItem = stockItems.find(s => s.id === item.stockId);
+              return (
+                <View key={item.id} style={styles.itemRow}>
+                  <View style={styles.itemInputContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        styles.dropdownInput,
+                      ]}
+                      onPress={() => handleOpenSelection(item.id)}
+                    >
+                      <Text
+                        style={
+                          item.description
+                            ? styles.inputText
+                            : styles.placeholderText
+                        }
+                      >
+                        {item.description || 'Pilih Barang'}
+                      </Text>
+                    </TouchableOpacity>
+                    {stockItem && (
+                      <Text style={styles.stockInfoText}>
+                        Harga: Rp {stockItem.price.toLocaleString()} | Stok:{' '}
+                        {stockItem.stock}
+                      </Text>
+                    )}
+                    <TextInput
+                      style={styles.input}
+                      value={item.price.toString()}
+                      onChangeText={text =>
+                        handleUpdateItem(
+                          item.id,
+                          'price',
+                          parseInt(text, 10) || 0,
+                        )
+                      }
+                      keyboardType="numeric"
+                      placeholder="Harga"
+                    />
+                  </View>
+                  {items.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemoveItem(item.id)}
+                    >
+                      <Text style={styles.removeButtonText}>X</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                {items.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => handleRemoveItem(item.id)}
-                  >
-                    <Text style={styles.removeButtonText}>X</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+              );
+            })}
 
             <TouchableOpacity
               style={styles.addItemButton}
@@ -238,6 +310,72 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Modal Seleksi Barang */}
+      <Modal
+        visible={isSelectionModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setSelectionModalVisible(false)}
+      >
+        <View style={styles.centeredView}>
+          <View style={styles.modalView}>
+            <Text style={styles.modalTitle}>Pilih Barang</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Cari nama barang..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            <FlatList
+              data={stockItems.filter(item =>
+                item.book_name
+                  .toLowerCase()
+                  .includes(searchQuery.toLowerCase()),
+              )}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.selectionItem,
+                    item.stock <= 0 && styles.disabledSelectionItem,
+                  ]}
+                  onPress={() => item.stock > 0 && handleSelectStockItem(item)}
+                  disabled={item.stock <= 0}
+                >
+                  <View style={styles.selectionRow}>
+                    <View style={styles.itemInfo}>
+                      <Text
+                        style={[
+                          styles.selectionItemText,
+                          item.stock <= 0 && styles.disabledText,
+                        ]}
+                      >
+                        {item.book_name}
+                      </Text>
+                      <Text style={styles.selectionItemSubText}>
+                        Stok: {item.stock}
+                      </Text>
+                    </View>
+                    <Text style={styles.priceText}>
+                      Rp {item.price.toLocaleString()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>Tidak ada data stock</Text>
+              }
+            />
+            <TouchableOpacity
+              style={[styles.button, styles.buttonClose, styles.marginTop10]}
+              onPress={() => setSelectionModalVisible(false)}
+            >
+              <Text style={styles.textStyle}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 };
@@ -382,6 +520,85 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  dropdownInput: {
+    justifyContent: 'center',
+    height: 50, // Match typical input height
+    marginBottom: 8,
+  },
+  itemInputContainer: {
+    flex: 1,
+  },
+  marginTop10: {
+    marginTop: 10,
+  },
+  inputText: {
+    color: '#000',
+  },
+  placeholderText: {
+    color: '#999',
+  },
+  selectionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  selectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  itemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  disabledSelectionItem: {
+    backgroundColor: '#f9f9f9',
+  },
+  selectionItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#333',
+    lineHeight: 22,
+    marginBottom: 2,
+  },
+  disabledText: {
+    color: '#aaa',
+  },
+  selectionItemSubText: {
+    fontSize: 13,
+    color: '#888',
+  },
+  priceText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#2ecc71',
+    marginTop: 2,
+  },
+  emptyText: {
+    textAlign: 'center',
+    margin: 20,
+    color: '#666',
+  },
+  button: {
+    borderRadius: 20,
+    padding: 10,
+    elevation: 2,
+  },
+  buttonClose: {
+    backgroundColor: '#2196F3',
+  },
+  textStyle: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  stockInfoText: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+    marginLeft: 4,
   },
 });
 
