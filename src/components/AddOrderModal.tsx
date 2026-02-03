@@ -37,11 +37,11 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
   const [deliveryType, setDeliveryType] = useState('Manual');
   const [paymentStatus, setPaymentStatus] =
     useState<OrderDocument['payment_status']>('none');
+  const [isShippingPaid, setIsShippingPaid] = useState(false);
   const [items, setItems] = useState<OrderItem[]>([
     { id: Date.now().toString(), description: '', price: 0 },
   ]);
   const [loading, setLoading] = useState(false);
-  const [showDeliveryDropdown, setShowDeliveryDropdown] = useState(false);
 
   // State untuk data stock opname dan modal seleksi
   const [stockItems, setStockItems] = useState<StockOpnameDocument[]>([]);
@@ -58,6 +58,7 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
         setAddress(initialData.delivery_address || '');
         setDeliveryType(initialData.delivery_type);
         setPaymentStatus(initialData.payment_status);
+        setIsShippingPaid(initialData.is_shipping_paid || false);
         setItems(
           initialData.orders && initialData.orders.length > 0
             ? initialData.orders
@@ -144,13 +145,12 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
         delivery_address: address,
         delivery_type: deliveryType,
         payment_status: paymentStatus,
+        is_shipping_paid: deliveryType === 'Shopee' ? true : isShippingPaid,
         status: 'pending',
         orders: items,
         unique_code: Math.floor(Math.random() * 100) + 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        // Jika Shopee, otomatis is_shipping_paid = true
-        is_shipping_paid: deliveryType === 'Shopee',
       };
 
       await onSave(newOrder);
@@ -170,6 +170,7 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
     setAddress('');
     setDeliveryType('Manual');
     setPaymentStatus('none');
+    setIsShippingPaid(false);
     setItems([{ id: Date.now().toString(), description: '', price: 0 }]);
   };
 
@@ -195,7 +196,7 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
               style={styles.input}
               value={name}
               onChangeText={setName}
-              placeholder="Contoh: Budi Santoso"
+              placeholder="Contoh: Fajar Panca"
             />
 
             <Text style={styles.label}>4 Digit Terakhir No. HP</Text>
@@ -222,30 +223,59 @@ const AddOrderModal: React.FC<AddOrderModalProps> = ({
             )}
 
             <Text style={styles.label}>Tipe Pengiriman</Text>
-            <View style={{ zIndex: 1000 }}>
-              <TouchableOpacity
-                style={[styles.input, styles.dropdownInput]}
-                onPress={() => setShowDeliveryDropdown(!showDeliveryDropdown)}
-              >
-                <Text style={styles.inputText}>{deliveryType}</Text>
-              </TouchableOpacity>
-              {showDeliveryDropdown && (
-                <View style={styles.dropdownContainer}>
-                  {['Manual', 'Shopee'].map(type => (
-                    <TouchableOpacity
-                      key={type}
-                      style={styles.dropdownItem}
-                      onPress={() => {
-                        setDeliveryType(type);
-                        setShowDeliveryDropdown(false);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>{type}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+            <View style={styles.row}>
+              {(['Manual', 'Shopee'] as const).map(type => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.optionButton,
+                    deliveryType === type && styles.optionButtonActive,
+                  ]}
+                  onPress={() => setDeliveryType(type)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      deliveryType === type && styles.optionTextActive,
+                    ]}
+                  >
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
+
+            {deliveryType !== 'Shopee' && (
+              <TouchableOpacity
+                style={[styles.row, { alignItems: 'center', marginTop: 0 }]}
+                onPress={() => setIsShippingPaid(!isShippingPaid)}
+              >
+                <View
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderWidth: 2,
+                    borderColor: isShippingPaid ? '#4CAF50' : '#757575',
+                    borderRadius: 4,
+                    marginRight: 10,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: isShippingPaid ? '#4CAF50' : 'transparent',
+                  }}
+                >
+                  {isShippingPaid && (
+                    <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                      ✓
+                    </Text>
+                  )}
+                </View>
+                <Text style={[styles.label, { marginBottom: 0 }]}>
+                  Sudah Bayar Ongkir?
+                </Text>
+              </TouchableOpacity>
+            )}
+
+          
 
             <Text style={styles.sectionHeader}>Item Belanjaan</Text>
             {items.map(item => {
@@ -445,6 +475,30 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
+  row: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    gap: 10,
+  },
+  optionButton: {
+    flex: 1,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  optionButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  optionText: {
+    color: '#333',
+  },
+  optionTextActive: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
   sectionHeader: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -518,30 +572,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 50, // Match typical input height
     marginBottom: 8,
-  },
-  dropdownContainer: {
-    position: 'absolute',
-    top: 55,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  dropdownItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  dropdownItemText: {
-    fontSize: 16,
-    color: '#333',
   },
   itemInputContainer: {
     flex: 1,

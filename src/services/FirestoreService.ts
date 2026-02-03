@@ -48,6 +48,15 @@ export interface ExpenseDocument extends FirestoreDocument {
   created_at?: string;
 }
 
+export interface HistoricalDataDocument extends FirestoreDocument {
+  description: string;
+  capital: number; // Modal
+  revenue: number; // Pemasukan
+  profit: number; // Keuntungan (Revenue - Capital)
+  total_books: number; // Total buku terjual
+  created_at?: string;
+}
+
 class FirestoreService {
   /**
    * Mengambil semua dokumen dari sebuah koleksi

@@ -394,6 +394,7 @@ const ItemListScreen = ({ navigation }: any) => {
             onUpdateStatus={handleUpdateStatus}
             onDelete={handleDeleteOrder}
             onEditAddress={handleEditAddress}
+            onEditDeliveryType={handleEditDeliveryType}
             onToggleBookPaid={handleToggleBookPaid}
             onToggleShippingPaid={handleToggleShippingPaid}
             onEditItems={handleEditItems}
